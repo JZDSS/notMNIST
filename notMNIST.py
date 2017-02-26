@@ -137,13 +137,13 @@ tf.summary.scalar('xent', cross_entropy)
 
 is_correct = tf.equal(tf.argmax(tf.nn.softmax(P), 1), Y_)
 accuracy = tf.reduce_mean(tf.cast(is_correct, tf.float32))
-tf.summary.scalar('acc', accuracy)
+tf.summary.scalar('acc_train', accuracy)
 
 
 batch = tf.Variable(0, dtype=tf.float32)
-learning_rate = tf.train.exponential_decay(0.01, batch * BATCH_SIZE, train_labels.shape[0], 0.95, staircase=True)
+learning_rate = tf.train.exponential_decay(0.01, batch, 100, 0.95, staircase=True)
 # learning_rate = tf.train.exponential_decay(0.01, batch * BATCH_SIZE, 1, 0.95, staircase=True)
-tf.summary.scalar('lr', learning_rate)
+
 optimizer = tf.train.GradientDescentOptimizer(learning_rate)
 train_step = optimizer.minimize(loss)
 
