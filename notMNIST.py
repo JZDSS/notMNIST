@@ -77,22 +77,20 @@ train_data = (train_data - (PIXEL_DEPTH / 2.0)) / PIXEL_DEPTH
 X = tf.placeholder(tf.float32, [None, IMAGE_SIZE, IMAGE_SIZE, CHANNELS])
 
 conv1_weights = tf.Variable(tf.truncated_normal(
-	[5, 5, CHANNELS, 32],  # 5x5 filter, depth 32.
+	[5, 5, CHANNELS, 64],  # 5x5 filter, depth 32.
 	stddev=0.1))
-conv1_biases = tf.Variable(tf.zeros([32]))
+conv1_biases = tf.Variable(tf.zeros([64]))
 conv2_weights = tf.Variable(tf.truncated_normal(
-	[5, 5, 32, 64], stddev=0.1))
-conv2_biases = tf.Variable(tf.constant(0.1, shape=[64]))
+	[5, 5, 64, 128], stddev=0.1))
+conv2_biases = tf.Variable(tf.constant(0.1, shape=[128]))
 fc1_weights = tf.Variable(tf.truncated_normal(
-	[7, 7, 64, 512],
+	[7, 7, 128, 1024],
 	stddev=0.1))
-fc1_biases = tf.Variable(tf.constant(0.1, shape=[512]))
-fc2_weights = tf.Variable(tf.truncated_normal([1, 1, 512, NUM_CLASSES],
-											  stddev=0.1, ))
+fc1_biases = tf.Variable(tf.constant(0.1, shape=[1024]))
+fc2_weights = tf.Variable(tf.truncated_normal([1, 1, 1024, NUM_CLASSES], stddev=0.1, ))
 fc2_biases = tf.Variable(tf.constant(
 	0.1, shape=[NUM_CLASSES]))
 
-init = tf.global_variables_initializer()
 
 
 def model(data, train=False):
@@ -130,17 +128,18 @@ P = model(X, False)
 Y_ = tf.placeholder(tf.int64, [None, ])
 
 # cross_entropy = -tf.reduce_sum(Y_ * tf.log(Y))
-loss = tf.reduce_mean(tf.nn.sparse_softmax_cross_entropy_with_logits(Y, Y_))
+loss = tf.reduce_mean(tf.nn.sparse_softmax_cross_entropy_with_logits(logits=Y, labels=Y_))
 
-cross_entropy = tf.reduce_mean(tf.nn.sparse_softmax_cross_entropy_with_logits(P, Y_))
+cross_entropy = tf.reduce_mean(tf.nn.sparse_softmax_cross_entropy_with_logits(logits=P, labels=Y_))
 is_correct = tf.equal(tf.argmax(tf.nn.softmax(P), 1), Y_)
 accuracy = tf.reduce_mean(tf.cast(is_correct, tf.float32))
 batch = tf.Variable(0, dtype=tf.float32)
 learning_rate = tf.train.exponential_decay(0.01, batch * BATCH_SIZE, train_labels.shape[0], 0.95, staircase=True)
 
-optimizer = tf.train.GradientDescentOptimizer(0.003)
+optimizer = tf.train.GradientDescentOptimizer(learning_rate)
 train_step = optimizer.minimize(loss)
 
+init = tf.global_variables_initializer()
 sess = tf.Session()
 sess.run(init)
 
