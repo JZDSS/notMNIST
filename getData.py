@@ -3,7 +3,7 @@ import numpy as np
 import os
 import sys
 import tarfile
-from sklearn.linear_model import LogisticRegression
+
 from urllib.request import urlretrieve
 
 url = 'http://commondatastorage.googleapis.com/books1000/'
