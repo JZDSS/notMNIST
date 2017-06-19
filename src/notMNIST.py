@@ -96,8 +96,8 @@ def model(data, train=False):
 
     with tf.variable_scope("conv2"):
         conv2_weights = tf.get_variable("weights", initializer=tf.truncated_normal(
-            [5, 5, 32, 128], stddev=0.1))
-        conv2_biases = tf.get_variable("biases", initializer=tf.constant(0.1, shape=[128]))
+            [5, 5, 32, 64], stddev=0.1))
+        conv2_biases = tf.get_variable("biases", initializer=tf.constant(0.1, shape=[64]))
         conv = tf.nn.conv2d(pool,
                             conv2_weights,
                             strides=[1, 1, 1, 1],
@@ -110,20 +110,20 @@ def model(data, train=False):
 
     with tf.variable_scope("fc1"):
         fc1_weights = tf.get_variable("weights", initializer=tf.truncated_normal(
-            [7, 7, 128, 1024],
+            [7*7*64, 1024],
             stddev=0.1))
         fc1_biases = tf.get_variable("biases", initializer=tf.constant(0.1, shape=[1024]))
-        fc = tf.nn.conv2d(pool, fc1_weights, [1, 1, 1, 1], 'VALID', name='fc1')
+        fc = tf.nn.relu(tf.matmul(tf.reshape(pool, [-1, 7*7*64]), fc1_weights))
         hidden = tf.nn.relu(fc + fc1_biases)
     
     # if train:
     #     hidden = tf.nn.dropout(hidden, 0.5)
 
     with tf.variable_scope("fc2"):
-        fc2_weights = tf.get_variable("weights", initializer=tf.truncated_normal([1, 1, 1024, NUM_CLASSES], stddev=0.1, ))
-        fc2_biases = tf.get_variable("biases", initializer=tf.constant(
-            0.1, shape=[NUM_CLASSES]))
-        res = tf.reshape(tf.nn.conv2d(hidden, fc2_weights, [1, 1, 1, 1], 'VALID') + fc2_biases, [-1, NUM_CLASSES])
+        fc2_weights = tf.get_variable("weights", initializer=tf.truncated_normal([1024, NUM_CLASSES], stddev=0.1, ))
+        fc2_biases = tf.get_variable("biases", initializer=tf.constant(0.1, shape=[NUM_CLASSES]))
+        res = tf.matmul(hidden, fc2_weights) + fc2_biases
+        # res = tf.reshape(, [-1, NUM_CLASSES])
     if train:
         tf.summary.histogram("conv1_w", conv1_weights)
         tf.summary.histogram('conv1_b', conv1_biases)
@@ -154,13 +154,13 @@ accuracy2 = tf.reduce_mean(tf.cast(is_correct, tf.float32))
 tf.summary.scalar('acc_train', accuracy1)
 
 
-batch = tf.Variable(0, dtype=tf.float32)
-learning_rate = tf.train.exponential_decay(0.02, batch, 100, 0.95, staircase=True)
-# tf.summary.scalar('lr', learning_rate)
+global_step = tf.Variable(0, dtype=tf.float32)
+learning_rate = tf.train.exponential_decay(0.02, global_step, 100, 0.95, staircase=True)
+tf.summary.scalar('lr', learning_rate)
 # learning_rate = tf.train.exponential_decay(0.01, batch * BATCH_SIZE, 1, 0.95, staircase=True)
 
 optimizer = tf.train.GradientDescentOptimizer(learning_rate)
-train_step = optimizer.minimize(loss)
+train_step = optimizer.minimize(loss, global_step=global_step)
 
 init = tf.global_variables_initializer()
 
@@ -170,6 +170,7 @@ test_acc = tf.summary.scalar('acc_test', accuracy2)
 saver = tf.train.Saver()
 writer = tf.summary.FileWriter(LOGDIR)
 writer.add_graph(sess.graph)
+
 
 def get_batch(data, labels):
     id = np.random.randint(low=0, high=train_labels.shape[0], size=BATCH_SIZE, dtype=np.int32)
@@ -183,14 +184,15 @@ for i in range(100000):
     # train
     train_feed = {X: batch_X, Y_: batch_Y}
     sess.run(train_step, feed_dict=train_feed)
+    # print(sess.run(global_step))
     # print(sess.run(conv1_weights))
     a, c, s = sess.run([accuracy1, cross_entropy, summ], feed_dict=train_feed)
     writer.add_summary(s, i)
     print('step %06d batch acc: %02d%%, ce: %02.02f' % (i, a * 100, c))
     saver.save(sess, os.path.join(LOGDIR, 'model.ckpt'), i)
-    if ((i - 99) % 100) == 0:
-        valid_feed = {X: valid_data, Y_: valid_labels}
-        a, c, te_a= sess.run([accuracy2, cross_entropy, test_acc], feed_dict=valid_feed)
-        writer.add_summary(te_a, i/100)
-        print('valid set acc: %02.02f%%, ce: %02.01f' % (a * 100, c))
+    # if ((i - 99) % 100) == 0:
+    #     valid_feed = {X: valid_data, Y_: valid_labels}
+    #     a, c, te_a= sess.run([accuracy2, cross_entropy, test_acc], feed_dict=valid_feed)
+    #     writer.add_summary(te_a, i/100)
+    #     print('valid set acc: %02.02f%%, ce: %02.01f' % (a * 100, c))
 
