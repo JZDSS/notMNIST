@@ -8,7 +8,7 @@ from urllib.request import urlretrieve
 
 url = 'http://commondatastorage.googleapis.com/books1000/'
 last_percent_reported = None
-data_root = '../notMNIST_data' # Change me to store data elsewhere
+data_root = '../data' # Change me to store data elsewhere
 
 def download_progress_hook(count, blockSize, totalSize):
   """A hook to report the progress of a download. This is mostly intended for users with
