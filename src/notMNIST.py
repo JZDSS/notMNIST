@@ -1,19 +1,21 @@
+import argparse
+import sys
 import os
 import numpy as np
 import pickle
 import traceback
 import tensorflow as tf
-# from tensorflow.examples.tutorials import mnist
-
 from PIL import Image
+
+
+FLAGS = None
 
 IMAGE_SIZE = 28
 CHANNELS = 1
 BATCH_SIZE = 64
 NUM_CLASSES = 10
 PIXEL_DEPTH = 255
-LOGDIR = '../logs'
-sess = tf.Session()
+
 def get_data_and_labels():
     if not os.path.exists('train_data.pkl'):
         letter_list = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J']
@@ -68,131 +70,204 @@ def get_data_and_labels():
     return train_data, train_labels, valid_data, valid_labels
 
 
-train_data, train_labels, valid_data, valid_labels = get_data_and_labels()
-train_data.astype(np.float32)
-train_labels.astype(np.int64)
-valid_data.astype(np.float32)
-valid_labels.astype(np.int64)
-train_data = (train_data - (PIXEL_DEPTH / 2.0)) / PIXEL_DEPTH * 2.0
-valid_data = (valid_data - (PIXEL_DEPTH / 2.0)) / PIXEL_DEPTH * 2.0
-X = tf.placeholder(tf.float32, [None, IMAGE_SIZE, IMAGE_SIZE, CHANNELS])
 
 
-def model(data, train=False):
-    with tf.variable_scope("conv1"):
-        conv1_weights = tf.get_variable("weights", initializer=tf.truncated_normal(
-            [5, 5, CHANNELS, 32],  # 5x5 filter, depth 32.
-            stddev=0.1))
-        conv1_biases = tf.get_variable("biases", initializer=tf.zeros([32]))
-        conv = tf.nn.conv2d(data,
-                            conv1_weights,
-                            strides=[1, 1, 1, 1],
-                            padding='SAME', name="conv1")
-        relu = tf.nn.relu(tf.nn.bias_add(conv, conv1_biases))
-        pool = tf.nn.max_pool(relu,
-                              ksize=[1, 2, 2, 1],
-                              strides=[1, 2, 2, 1],
-                              padding='SAME', name="pool1")
 
-    with tf.variable_scope("conv2"):
-        conv2_weights = tf.get_variable("weights", initializer=tf.truncated_normal(
-            [5, 5, 32, 64], stddev=0.1))
-        conv2_biases = tf.get_variable("biases", initializer=tf.constant(0.1, shape=[64]))
-        conv = tf.nn.conv2d(pool,
-                            conv2_weights,
-                            strides=[1, 1, 1, 1],
-                            padding='SAME', name='conv2')
-        relu = tf.nn.relu(tf.nn.bias_add(conv, conv2_biases))
-        pool = tf.nn.max_pool(relu,
-                              ksize=[1, 2, 2, 1],
-                              strides=[1, 2, 2, 1],
-                              padding='SAME', name='pool2')
+def deepnn(x):
+    def conv2d(x, W):
+        """conv2d returns a 2d convolution layer with full stride."""
+        return tf.nn.conv2d(x, W, strides=[1, 1, 1, 1], padding='SAME')
 
-    with tf.variable_scope("fc1"):
-        fc1_weights = tf.get_variable("weights", initializer=tf.truncated_normal(
-            [7*7*64, 1024],
-            stddev=0.1))
-        fc1_biases = tf.get_variable("biases", initializer=tf.constant(0.1, shape=[1024]))
-        fc = tf.nn.relu(tf.matmul(tf.reshape(pool, [-1, 7*7*64]), fc1_weights))
-        hidden = tf.nn.relu(fc + fc1_biases)
-    
-    # if train:
-    #     hidden = tf.nn.dropout(hidden, 0.5)
+    def max_pool_2x2(x):
+        """max_pool_2x2 downsamples a feature map by 2X."""
+        return tf.nn.max_pool(x, ksize=[1, 2, 2, 1],
+                              strides=[1, 2, 2, 1], padding='SAME')
 
-    with tf.variable_scope("fc2"):
-        fc2_weights = tf.get_variable("weights", initializer=tf.truncated_normal([1024, NUM_CLASSES], stddev=0.1, ))
-        fc2_biases = tf.get_variable("biases", initializer=tf.constant(0.1, shape=[NUM_CLASSES]))
-        res = tf.matmul(hidden, fc2_weights) + fc2_biases
-        # res = tf.reshape(, [-1, NUM_CLASSES])
-    if train:
-        tf.summary.histogram("conv1_w", conv1_weights)
-        tf.summary.histogram('conv1_b', conv1_biases)
-        tf.summary.histogram("conv2_w", conv2_weights)
-        tf.summary.histogram("conv2_b", conv2_biases)
-        tf.summary.histogram("fc1_w", fc1_weights)
-        tf.summary.histogram("fc1_b", fc1_biases)
-        tf.summary.histogram("fc2_w", fc2_weights)
-        tf.summary.histogram("fc2_b", fc2_biases)
+    def weight_variable(shape):
+        """weight_variable generates a weight variable of a given shape."""
+        initial = tf.truncated_normal(shape, stddev=0.1)
+        return tf.Variable(initial, name="weights")
 
-    return res
+    def bias_variable(shape):
+        """bias_variable generates a bias variable of a given shape."""
+        initial = tf.constant(0.1, shape=shape)
+        return tf.Variable(initial, name="biases")
 
-with tf.variable_scope("net") as scope:
-    Y = model(X, True)
-    scope.reuse_variables()
-    P = model(X, False)
+    def variable_summaries(var):
+        """Attach a lot of summaries to a Tensor (for TensorBoard visualization)."""
+        with tf.name_scope('summaries'):
+            mean = tf.reduce_mean(var)
+            tf.summary.scalar('mean', mean)
+            with tf.name_scope('stddev'):
+                stddev = tf.sqrt(tf.reduce_mean(tf.square(var - mean)))
+            tf.summary.scalar('stddev', stddev)
+            tf.summary.scalar('max', tf.reduce_max(var))
+            tf.summary.scalar('min', tf.reduce_min(var))
+            tf.summary.histogram('histogram', var)
 
-Y_ = tf.placeholder(tf.int64, [None, ])
+    # First convolutional layer - maps one grayscale image to 32 feature maps.
+    with tf.name_scope("conv1"):
+        W_conv1 = weight_variable([5, 5, 1, 32])
+        variable_summaries(W_conv1)
+        b_conv1 = bias_variable([32])
+        variable_summaries(b_conv1)
 
-# cross_entropy = -tf.reduce_sum(Y_ * tf.log(Y))
-loss = tf.reduce_mean(tf.nn.sparse_softmax_cross_entropy_with_logits(logits=Y, labels=Y_), name="loss")
+        h_conv1 = tf.nn.relu(conv2d(x, W_conv1) + b_conv1)
 
-cross_entropy = tf.reduce_mean(tf.nn.sparse_softmax_cross_entropy_with_logits(logits=P, labels=Y_),name="xent")
-is_correct = tf.equal(tf.argmax(tf.nn.softmax(P), 1), Y_)
+        # Pooling layer - downsamples by 2X.
+        h_pool1 = max_pool_2x2(h_conv1)
 
-accuracy1 = tf.reduce_mean(tf.cast(is_correct, tf.float32))
-accuracy2 = tf.reduce_mean(tf.cast(is_correct, tf.float32))
-tf.summary.scalar('acc_train', accuracy1)
+    # Second convolutional layer -- maps 32 feature maps to 64.
+    with tf.name_scope("conv2"):
+        W_conv2 = weight_variable([5, 5, 32, 64])
+        variable_summaries(W_conv2)
+        b_conv2 = bias_variable([64])
+        variable_summaries(b_conv2)
 
+        h_conv2 = tf.nn.relu(conv2d(h_pool1, W_conv2) + b_conv2)
 
-global_step = tf.Variable(0, dtype=tf.float32)
-learning_rate = tf.train.exponential_decay(0.02, global_step, 100, 0.95, staircase=True)
-tf.summary.scalar('lr', learning_rate)
-# learning_rate = tf.train.exponential_decay(0.01, batch * BATCH_SIZE, 1, 0.95, staircase=True)
+        # Second pooling layer.
+        h_pool2 = max_pool_2x2(h_conv2)
 
-optimizer = tf.train.GradientDescentOptimizer(learning_rate)
-train_step = optimizer.minimize(loss, global_step=global_step)
+    # Fully connected layer 1 -- after 2 round of downsampling, our 28x28 image
+    # is down to 7x7x64 feature maps -- maps this to 1024 features.
+    with tf.name_scope("fc1"):
+        W_fc1 = weight_variable([7 * 7 * 64, 1024])
+        variable_summaries(W_fc1)
+        b_fc1 = bias_variable([1024])
+        variable_summaries(b_fc1)
 
-init = tf.global_variables_initializer()
+        h_pool2_flat = tf.reshape(h_pool2, [-1, 7 * 7 * 64])
+        h_fc1 = tf.nn.relu(tf.matmul(h_pool2_flat, W_fc1) + b_fc1)
 
-sess.run(init)
-summ = tf.summary.merge_all()
-test_acc = tf.summary.scalar('acc_test', accuracy2)
-saver = tf.train.Saver()
-writer = tf.summary.FileWriter(LOGDIR)
-writer.add_graph(sess.graph)
+    # Dropout - controls the complexity of the model, prevents co-adaptation of
+    # features.
+    with tf.name_scope("dropout"):
+        keep_prob = tf.placeholder(tf.float32, name="keep_prob")
+        h_fc1_drop = tf.nn.dropout(h_fc1, keep_prob)
 
+    # Map the 1024 features to 10 classes, one for each digit
+    with tf.name_scope("fc2"):
+        W_fc2 = weight_variable([1024, 10])
+        variable_summaries(W_fc2)
+        b_fc2 = bias_variable([10])
+        variable_summaries(b_fc2)
 
-def get_batch(data, labels):
-    id = np.random.randint(low=0, high=train_labels.shape[0], size=BATCH_SIZE, dtype=np.int32)
-    return data[id, ...], labels[id]
+        y_conv = tf.matmul(h_fc1_drop, W_fc2) + b_fc2
+
+    return y_conv, keep_prob
+
+def train():
+    train_data, train_labels, valid_data, valid_labels = get_data_and_labels()
+    train_data.astype(np.float32)
+    train_labels.astype(np.int64)
+    valid_data.astype(np.float32)
+    valid_labels.astype(np.int64)
+    train_data = (train_data - (PIXEL_DEPTH / 2.0)) / PIXEL_DEPTH * 2.0
+    valid_data = (valid_data - (PIXEL_DEPTH / 2.0)) / PIXEL_DEPTH * 2.0
 
 
-for i in range(100000):
-    # get batch
-    batch_X, batch_Y = get_batch(train_data, train_labels)
-    
-    # train
-    train_feed = {X: batch_X, Y_: batch_Y}
-    sess.run(train_step, feed_dict=train_feed)
-    # print(sess.run(global_step))
-    # print(sess.run(conv1_weights))
-    a, c, s = sess.run([accuracy1, cross_entropy, summ], feed_dict=train_feed)
-    writer.add_summary(s, i)
-    print('step %06d batch acc: %02d%%, ce: %02.02f' % (i, a * 100, c))
-    saver.save(sess, os.path.join(LOGDIR, 'model.ckpt'), i)
-    # if ((i - 99) % 100) == 0:
-    #     valid_feed = {X: valid_data, Y_: valid_labels}
-    #     a, c, te_a= sess.run([accuracy2, cross_entropy, test_acc], feed_dict=valid_feed)
-    #     writer.add_summary(te_a, i/100)
-    #     print('valid set acc: %02.02f%%, ce: %02.01f' % (a * 100, c))
+    sess = tf.InteractiveSession()
 
+    with tf.name_scope('input'):
+        x = tf.placeholder(tf.float32, [None, 28, 28, 1], name='x-input')
+        y_ = tf.placeholder(tf.int64, [None, ], name='y-input')
+
+    # with tf.name_scope('input_reshape'):
+    #     image_shaped_input = tf.reshape(x, [-1, 28, 28, 1])
+    tf.summary.image('input', x, 10)
+
+    y, keep_prob = deepnn(x)
+
+    with tf.name_scope('cross_entropy'):
+        cross_entropy = tf.reduce_mean(tf.nn.sparse_softmax_cross_entropy_with_logits(
+            labels=y_, logits=y), name="cross_entropy")
+        tf.summary.scalar('cross_entropy', cross_entropy)
+
+    with tf.name_scope('train'):
+        global_step = tf.Variable(0, name="global_step")
+        learning_rate = tf.train.exponential_decay(FLAGS.learning_rate,
+            global_step, FLAGS.decay_steps, 0.95, True, "learning_rate")
+        train_step = tf.train.AdamOptimizer(learning_rate).minimize(
+            cross_entropy, global_step=global_step)
+
+    with tf.name_scope('accuracy'):
+        with tf.name_scope('correct_prediction'):
+            correct_prediction = tf.equal(tf.argmax(y, 1), y_)
+        with tf.name_scope('accuracy'):
+            accuracy = tf.reduce_mean(tf.cast(correct_prediction, tf.float32))
+        tf.summary.scalar('accuracy', accuracy)
+
+    merged = tf.summary.merge_all()
+    train_writer = tf.summary.FileWriter(FLAGS.log_dir + '/train', sess.graph)
+    test_writer = tf.summary.FileWriter(FLAGS.log_dir + '/test')
+    tf.global_variables_initializer().run()
+
+    def feed_dict(train):
+        """Make a TensorFlow feed_dict: maps data onto Tensor placeholders."""
+        def get_batch(data, labels):
+            id = np.random.randint(low=0, high=labels.shape[0], size=BATCH_SIZE, dtype=np.int32)
+            return data[id, ...], labels[id]
+        if train:
+            xs, ys = get_batch(train_data, train_labels)
+            k = FLAGS.dropout
+        else:
+            xs, ys = get_batch(valid_data, valid_labels)
+            k = 1.0
+        return {x: xs, y_: ys, keep_prob: k}
+
+    for i in range(FLAGS.max_steps):
+        if i % 100 == 0:  # Record summaries and test-set accuracy
+            summary, acc = sess.run([merged, accuracy], feed_dict=feed_dict(False))
+            test_writer.add_summary(summary, i)
+            print('Accuracy at step %s: %s' % (i, acc))
+        else:  # Record train set summaries, and train
+            if i % 100 == 99:  # Record execution stats
+                run_options = tf.RunOptions(trace_level=tf.RunOptions.FULL_TRACE)
+                run_metadata = tf.RunMetadata()
+                summary, _ = sess.run([merged, train_step],
+                                  feed_dict=feed_dict(True),
+                                  options=run_options,
+                                  run_metadata=run_metadata)
+                train_writer.add_run_metadata(run_metadata, 'step%03d' % i)
+                train_writer.add_summary(summary, i)
+                print('Adding run metadata for', i)
+            else:  # Record a summary
+                summary, _ = sess.run([merged, train_step], feed_dict=feed_dict(True))
+                train_writer.add_summary(summary, i)
+
+    train_writer.close()
+    test_writer.close()
+
+
+def main(_):
+    if tf.gfile.Exists(FLAGS.log_dir):
+        tf.gfile.DeleteRecursively(FLAGS.log_dir)
+    tf.gfile.MakeDirs(FLAGS.log_dir)
+    train()
+
+
+if __name__ == '__main__':
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--fake_data', nargs='?', const=True, type=bool,
+                      default=False,
+                      help='If true, uses fake data for unit testing.')
+    parser.add_argument('--max_steps', type=int, default=10000,
+                      help='Number of steps to run trainer.')
+    parser.add_argument('--learning_rate', type=float, default=0.01,
+                      help='Initial learning rate')
+    parser.add_argument('--decay_steps', type=int, default=1000)
+    parser.add_argument('--dropout', type=float, default=0.5,
+                      help='Keep probability for training dropout.')
+    parser.add_argument(
+      '--data_dir',
+      type=str,
+      default='.',
+      help='Directory for storing input data')
+    parser.add_argument(
+      '--log_dir',
+      type=str,
+      default='/tmp/tensorflow/notmnist/logs',
+      help='Summaries log directory')
+    FLAGS, unparsed = parser.parse_known_args()
+    tf.app.run(main=main, argv=[sys.argv[0]] + unparsed)
