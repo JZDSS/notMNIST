@@ -8,7 +8,6 @@ import traceback
 import tensorflow as tf
 from PIL import Image
 
-
 FLAGS = None
 
 IMAGE_SIZE = 28
@@ -16,6 +15,7 @@ CHANNELS = 1
 BATCH_SIZE = 64
 NUM_CLASSES = 10
 PIXEL_DEPTH = 255
+
 
 def get_data_and_labels():
     if not os.path.exists('train_data.pkl'):
@@ -55,10 +55,10 @@ def get_data_and_labels():
                     labels[n] = label
                     print('%s/%s/%s' % (dir, letter, image_name))
             return data, labels
-        
+
         train_data, train_labels = load_data('../data/notMNIST_large', train_num)
         valid_data, valid_labels = load_data('../data/notMNIST_small', valid_num)
-        
+
         pickle.dump(train_data, open('train_data.pkl', 'wb'), pickle.HIGHEST_PROTOCOL)
         pickle.dump(train_labels, open('train_labels.pkl', 'wb'), pickle.HIGHEST_PROTOCOL)
         pickle.dump(valid_data, open('valid_data.pkl', 'wb'), pickle.HIGHEST_PROTOCOL)
@@ -69,9 +69,6 @@ def get_data_and_labels():
         valid_data = pickle.load(open('valid_data.pkl', 'rb'))
         valid_labels = pickle.load(open('valid_labels.pkl', 'rb'))
     return train_data, train_labels, valid_data, valid_labels
-
-
-
 
 
 def deepnn(x):
@@ -159,6 +156,7 @@ def deepnn(x):
 
     return y_conv, keep_prob
 
+
 def train():
     train_data, train_labels, valid_data, valid_labels = get_data_and_labels()
     train_data.astype(np.float32)
@@ -188,7 +186,7 @@ def train():
     with tf.name_scope('train'):
         global_step = tf.Variable(0, name="global_step")
         learning_rate = tf.train.exponential_decay(FLAGS.learning_rate,
-            global_step, FLAGS.decay_steps, 0.95, True, "learning_rate")
+                                                   global_step, FLAGS.decay_steps, 0.95, True, "learning_rate")
         train_step = tf.train.AdamOptimizer(learning_rate).minimize(
             cross_entropy, global_step=global_step)
     tf.summary.scalar('learning_rate', learning_rate)
@@ -215,12 +213,13 @@ def train():
     else:
         tf.global_variables_initializer().run()
 
-
     def feed_dict(train):
         """Make a TensorFlow feed_dict: maps data onto Tensor placeholders."""
+
         def get_batch(data, labels):
             id = np.random.randint(low=0, high=labels.shape[0], size=BATCH_SIZE, dtype=np.int32)
             return data[id, ...], labels[id]
+
         if train:
             xs, ys = get_batch(train_data, train_labels)
             k = FLAGS.dropout
@@ -245,9 +244,9 @@ def train():
             run_options = tf.RunOptions(trace_level=tf.RunOptions.FULL_TRACE)
             run_metadata = tf.RunMetadata()
             summary, _ = sess.run([merged, train_step],
-                              feed_dict=feed_dict(True),
-                              options=run_options,
-                              run_metadata=run_metadata)
+                                  feed_dict=feed_dict(True),
+                                  options=run_options,
+                                  run_metadata=run_metadata)
             train_writer.add_run_metadata(run_metadata, 'step%03d' % i)
             train_writer.add_summary(summary, i)
             print('Adding run metadata for step', i)
@@ -270,25 +269,25 @@ def main(_):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--fake_data', nargs='?', const=True, type=bool,
-                      default=False,
-                      help='If true, uses fake data for unit testing.')
+                        default=False,
+                        help='If true, uses fake data for unit testing.')
     parser.add_argument('--max_steps', type=int, default=100000,
-                      help='Number of steps to run trainer.')
+                        help='Number of steps to run trainer.')
     parser.add_argument('--learning_rate', type=float, default=0.003,
-                      help='Initial learning rate')
+                        help='Initial learning rate')
     parser.add_argument('--decay_steps', type=int, default=300)
     parser.add_argument('--dropout', type=float, default=0.3,
-                      help='Keep probability for training dropout.')
+                        help='Keep probability for training dropout.')
     parser.add_argument(
-      '--data_dir',
-      type=str,
-      default='.',
-      help='Directory for storing input data')
+        '--data_dir',
+        type=str,
+        default='.',
+        help='Directory for storing input data')
     parser.add_argument(
-      '--log_dir',
-      type=str,
-      default='../logs',
-      help='Summaries log directory')
+        '--log_dir',
+        type=str,
+        default='../logs',
+        help='Summaries log directory')
     parser.add_argument(
         '--ckpt_dir',
         type=str,
