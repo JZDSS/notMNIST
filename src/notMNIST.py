@@ -198,7 +198,7 @@ def train():
             correct_prediction = tf.equal(tf.argmax(y, 1), y_)
         with tf.name_scope('accuracy'):
             accuracy = tf.reduce_mean(tf.cast(correct_prediction, tf.float32))
-        tf.summary.scalar('accuracy', accuracy)
+    tf.summary.scalar('accuracy', accuracy)
 
     merged = tf.summary.merge_all()
 
@@ -216,14 +216,14 @@ def train():
         tf.global_variables_initializer().run()
 
 
-    def feed_dict(train):
+    def feed_dict(train, kk=FLAGS.dropout):
         """Make a TensorFlow feed_dict: maps data onto Tensor placeholders."""
         def get_batch(data, labels):
             id = np.random.randint(low=0, high=labels.shape[0], size=BATCH_SIZE, dtype=np.int32)
             return data[id, ...], labels[id]
         if train:
             xs, ys = get_batch(train_data, train_labels)
-            k = FLAGS.dropout
+            k = kk
         else:
             # xs, ys = get_batch(valid_data, valid_labels)
             xs = valid_data
@@ -236,7 +236,7 @@ def train():
             time.sleep(100)
 
         if i % 100 == 0:  # Record summaries and test-set accuracy
-            summary, acc = sess.run([merged, accuracy], feed_dict=feed_dict(False))
+            acc, summary = sess.run([accuracy, merged], feed_dict=feed_dict(False))
             test_writer.add_summary(summary, i)
             print('Accuracy at step %s: %s' % (i, acc))
 
@@ -244,16 +244,24 @@ def train():
         if i % 100 == 99:  # Record execution stats
             run_options = tf.RunOptions(trace_level=tf.RunOptions.FULL_TRACE)
             run_metadata = tf.RunMetadata()
-            summary, _ = sess.run([merged, train_step],
-                              feed_dict=feed_dict(True),
-                              options=run_options,
-                              run_metadata=run_metadata)
+            feed = feed_dict(True)
+            sess.run(train_step,
+                  feed_dict=feed,
+                  options=run_options,
+                  run_metadata=run_metadata)
             train_writer.add_run_metadata(run_metadata, 'step%03d' % i)
+
+            feed[keep_prob] = 1.0
+            summary = sess.run(merged, feed_dict=feed)
             train_writer.add_summary(summary, i)
             print('Adding run metadata for step', i)
             saver.save(sess, os.path.join(FLAGS.ckpt_dir, 'model.ckpt'))
         else:  # Record a summary
-            summary, _ = sess.run([merged, train_step], feed_dict=feed_dict(True))
+            feed = feed_dict(True)
+            sess.run(train_step, feed_dict=feed)
+
+            feed[keep_prob] = 1.0
+            summary = sess.run(merged, feed_dict=feed)
             train_writer.add_summary(summary, i)
 
     train_writer.close()

@@ -7,12 +7,12 @@ import pickle
 import traceback
 import tensorflow as tf
 from PIL import Image
-
+from tensorflow.examples.tutorials.mnist import input_data
 FLAGS = None
 
 IMAGE_SIZE = 28
 CHANNELS = 1
-BATCH_SIZE = 64
+BATCH_SIZE = 128
 NUM_CLASSES = 10
 PIXEL_DEPTH = 255
 
@@ -103,7 +103,7 @@ def deepnn(x):
                 tf.summary.scalar('max', tf.reduce_max(var))
                 tf.summary.scalar('min', tf.reduce_min(var))
                 tf.summary.histogram('histogram', var)
-
+    x_image = tf.reshape(x, [-1, 28, 28, 1])
     # First convolutional layer - maps one grayscale image to 32 feature maps.
     with tf.name_scope("conv1"):
         W_conv1 = weight_variable([5, 5, 1, 32])
@@ -111,7 +111,7 @@ def deepnn(x):
         b_conv1 = bias_variable([32])
         variable_summaries(b_conv1, 'biases')
 
-        h_conv1 = tf.nn.relu(conv2d(x, W_conv1) + b_conv1)
+        h_conv1 = tf.nn.relu(conv2d(x_image, W_conv1) + b_conv1)
 
         # Pooling layer - downsamples by 2X.
         h_pool1 = max_pool_2x2(h_conv1)
@@ -158,28 +158,33 @@ def deepnn(x):
 
 
 def train():
-    train_data, train_labels, valid_data, valid_labels = get_data_and_labels()
-    train_data.astype(np.float32)
-    train_labels.astype(np.int64)
-    valid_data.astype(np.float32)
-    valid_labels.astype(np.int64)
-    train_data = (train_data - (PIXEL_DEPTH / 2.0)) / PIXEL_DEPTH * 2.0
-    valid_data = (valid_data - (PIXEL_DEPTH / 2.0)) / PIXEL_DEPTH * 2.0
+    # train_data, train_labels, valid_data, valid_labels = get_data_and_labels()
+    # train_data.astype(np.float32)
+    # train_labels.astype(np.int64)
+    # valid_data.astype(np.float32)
+    # valid_labels.astype(np.int64)
+    # train_data = (train_data - (PIXEL_DEPTH / 2.0)) / PIXEL_DEPTH * 2.0
+    # valid_data = (valid_data - (PIXEL_DEPTH / 2.0)) / PIXEL_DEPTH * 2.0
+    mnist = input_data.read_data_sets(FLAGS.data_dir,
+                                      one_hot=True,
+                                      fake_data=FLAGS.fake_data)
+
 
     sess = tf.InteractiveSession()
 
     with tf.name_scope('input'):
-        x = tf.placeholder(tf.float32, [None, 28, 28, 1], name='x-input')
-        y_ = tf.placeholder(tf.int64, [None, ], name='y-input')
+        x = tf.placeholder(tf.float32, [None, 784], name='x-input')
+        y_ = tf.placeholder(tf.int64, [None, 10], name='y-input')
+    image_shaped_input = tf.reshape(x, [-1, 28, 28, 1])
 
     # with tf.name_scope('input_reshape'):
     #     image_shaped_input = tf.reshape(x, [-1, 28, 28, 1])
-    tf.summary.image('input', x, 10)
+    tf.summary.image('input', image_shaped_input, 10)
 
     y, keep_prob = deepnn(x)
 
     with tf.name_scope('loss'):
-        cross_entropy = tf.reduce_mean(tf.nn.sparse_softmax_cross_entropy_with_logits(
+        cross_entropy = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(
             labels=y_, logits=y), name="cross_entropy")
     tf.summary.scalar('cross_entropy', cross_entropy)
 
@@ -193,7 +198,7 @@ def train():
 
     with tf.name_scope('accuracy'):
         with tf.name_scope('correct_prediction'):
-            correct_prediction = tf.equal(tf.argmax(y, 1), y_)
+            correct_prediction = tf.equal(tf.argmax(y, 1), tf.argmax(y_, 1))
         with tf.name_scope('accuracy'):
             accuracy = tf.reduce_mean(tf.cast(correct_prediction, tf.float32))
         tf.summary.scalar('accuracy', accuracy)
@@ -208,25 +213,18 @@ def train():
 
     if tf.gfile.Exists(os.path.join(FLAGS.ckpt_dir, 'checkpoint')):
         saver.restore(sess, os.path.join(FLAGS.ckpt_dir, 'model.ckpt'))
-        acc = sess.run(accuracy, feed_dict={x: train_data[1:5000, ...], y_: train_labels[1:5000], keep_prob: 1.0})
-        print(acc)
+        # acc = sess.run(accuracy, feed_dict={x: train_data[1:5000, ...], y_: train_labels[1:5000], keep_prob: 1.0})
+        # print(acc)
     else:
         tf.global_variables_initializer().run()
 
-    def feed_dict(train):
+    def feed_dict(train, kk=FLAGS.dropout):
         """Make a TensorFlow feed_dict: maps data onto Tensor placeholders."""
-
-        def get_batch(data, labels):
-            id = np.random.randint(low=0, high=labels.shape[0], size=BATCH_SIZE, dtype=np.int32)
-            return data[id, ...], labels[id]
-
-        if train:
-            xs, ys = get_batch(train_data, train_labels)
-            k = FLAGS.dropout
+        if train or FLAGS.fake_data:
+            xs, ys = mnist.train.next_batch(100, fake_data=FLAGS.fake_data)
+            k = kk
         else:
-            # xs, ys = get_batch(valid_data, valid_labels)
-            xs = valid_data
-            ys = valid_labels
+            xs, ys = mnist.test.images, mnist.test.labels
             k = 1.0
         return {x: xs, y_: ys, keep_prob: k}
 
@@ -234,25 +232,31 @@ def train():
         if i % 1000 == 0 and i != 0:
             time.sleep(100)
 
-        if i % 100 == 0:  # Record summaries and test-set accuracy
+        if i % 10 == 0:  # Record summaries and test-set accuracy
             summary, acc = sess.run([merged, accuracy], feed_dict=feed_dict(False))
             test_writer.add_summary(summary, i)
             print('Accuracy at step %s: %s' % (i, acc))
 
         # else:  # Record train set summaries, and train
-        if i % 100 == 99:  # Record execution stats
+        if i % 10 == 9:  # Record execution stats
             run_options = tf.RunOptions(trace_level=tf.RunOptions.FULL_TRACE)
             run_metadata = tf.RunMetadata()
-            summary, _ = sess.run([merged, train_step],
-                                  feed_dict=feed_dict(True),
+            feed = feed_dict(True)
+            sess.run(train_step,
+                                  feed_dict=feed,
                                   options=run_options,
                                   run_metadata=run_metadata)
             train_writer.add_run_metadata(run_metadata, 'step%03d' % i)
+            feed[keep_prob] = 1.0
+            summary = sess.run(merged, feed_dict=feed)
             train_writer.add_summary(summary, i)
             print('Adding run metadata for step', i)
             saver.save(sess, os.path.join(FLAGS.ckpt_dir, 'model.ckpt'))
         else:  # Record a summary
-            summary, _ = sess.run([merged, train_step], feed_dict=feed_dict(True))
+            feed = feed_dict(True)
+            sess.run(train_step, feed_dict=feed)
+            feed[keep_prob] = 1.0
+            summary = sess.run(merged, feed_dict=feed)
             train_writer.add_summary(summary, i)
 
     train_writer.close()
@@ -276,7 +280,7 @@ if __name__ == '__main__':
     parser.add_argument('--learning_rate', type=float, default=0.003,
                         help='Initial learning rate')
     parser.add_argument('--decay_steps', type=int, default=300)
-    parser.add_argument('--dropout', type=float, default=0.3,
+    parser.add_argument('--dropout', type=float, default=0.5,
                         help='Keep probability for training dropout.')
     parser.add_argument(
         '--data_dir',
